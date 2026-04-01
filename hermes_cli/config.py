@@ -247,6 +247,13 @@ DEFAULT_CONFIG = {
         "command_timeout": 30,  # Timeout for browser commands in seconds (screenshot, navigate, etc.)
         "record_sessions": False,  # Auto-record browser sessions as WebM videos
         "allow_private_urls": False,  # Allow navigating to private/internal IPs (localhost, 192.168.x.x, etc.)
+        "camofox": {
+            # When true, Hermes sends a stable profile-scoped userId to Camofox
+            # so the server can map it to a persistent browser profile directory.
+            # Requires Camofox server to be configured with CAMOFOX_PROFILE_DIR.
+            # When false (default), each session gets a random userId (ephemeral).
+            "managed_persistence": False,
+        },
     },
 
     # Filesystem checkpoints — automatic snapshots before destructive file ops.
@@ -524,6 +531,7 @@ ENV_VARS_BY_VERSION: Dict[int, List[str]] = {
     5: ["WHATSAPP_ENABLED", "WHATSAPP_MODE", "WHATSAPP_ALLOWED_USERS",
         "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SLACK_ALLOWED_USERS"],
     10: ["TAVILY_API_KEY"],
+    11: ["CAMOFOX_MANAGED_PERSISTENCE"],
 }
 
 # Required environment variables with metadata for migration prompts.
@@ -781,6 +789,13 @@ OPTIONAL_ENV_VARS = {
         "tools": ["browser_navigate", "browser_click"],
         "password": False,
         "category": "tool",
+    },
+    "CAMOFOX_MANAGED_PERSISTENCE": {
+        "description": "Enable persistent browser sessions with Camofox (stable identity per Hermes profile)",
+        "prompt": "Enable Camofox managed persistence (true/false)",
+        "url": None,
+        "password": False,
+        "category": "setting",
     },
     "FAL_KEY": {
         "description": "FAL API key for image generation",
