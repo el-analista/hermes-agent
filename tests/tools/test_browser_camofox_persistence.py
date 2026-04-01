@@ -16,7 +16,9 @@ from tools.browser_camofox import (
     _managed_persistence_enabled,
     camofox_close,
     camofox_navigate,
+    check_camofox_available,
     cleanup_all_camofox_sessions,
+    get_vnc_url,
 )
 from tools.browser_camofox_state import get_camofox_identity
 
@@ -48,6 +50,19 @@ class TestManagedPersistenceToggle:
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         monkeypatch.setenv("CAMOFOX_MANAGED_PERSISTENCE", "true")
         assert _managed_persistence_enabled() is True
+
+    @pytest.mark.parametrize("val", ["false", "0", "no"])
+    def test_explicit_false_env_values(self, tmp_path, monkeypatch, val):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setenv("CAMOFOX_MANAGED_PERSISTENCE", val)
+        assert _managed_persistence_enabled() is False
+
+    def test_enabled_via_config_yaml(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.delenv("CAMOFOX_MANAGED_PERSISTENCE", raising=False)
+        config = {"browser": {"camofox": {"managed_persistence": True}}}
+        with patch("tools.browser_camofox.load_config", return_value=config):
+            assert _managed_persistence_enabled() is True
 
 
 class TestEphemeralMode:
@@ -173,3 +188,52 @@ class TestManagedPersistenceMode:
         tab_requests = [req for req in requests_seen if "userId" in req]
         assert len(tab_requests) == 2
         assert tab_requests[0]["userId"] == tab_requests[1]["userId"]
+
+
+class TestVncUrlDiscovery:
+    """VNC URL is derived from the Camofox health endpoint."""
+
+    def test_vnc_url_from_health_port(self, monkeypatch):
+        monkeypatch.setenv("CAMOFOX_URL", "http://myhost:9377")
+        health_resp = _mock_response(json_data={"ok": True, "vncPort": 6080})
+        with patch("tools.browser_camofox.requests.get", return_value=health_resp):
+            assert check_camofox_available() is True
+        assert get_vnc_url() == "http://myhost:6080"
+
+    def test_vnc_url_none_when_headless(self, monkeypatch):
+        monkeypatch.setenv("CAMOFOX_URL", "http://localhost:9377")
+        health_resp = _mock_response(json_data={"ok": True})
+        with patch("tools.browser_camofox.requests.get", return_value=health_resp):
+            check_camofox_available()
+        assert get_vnc_url() is None
+
+    def test_vnc_url_rejects_invalid_port(self, monkeypatch):
+        monkeypatch.setenv("CAMOFOX_URL", "http://localhost:9377")
+        health_resp = _mock_response(json_data={"ok": True, "vncPort": "bad"})
+        with patch("tools.browser_camofox.requests.get", return_value=health_resp):
+            check_camofox_available()
+        assert get_vnc_url() is None
+
+    def test_vnc_url_only_probed_once(self, monkeypatch):
+        monkeypatch.setenv("CAMOFOX_URL", "http://localhost:9377")
+        health_resp = _mock_response(json_data={"ok": True, "vncPort": 6080})
+        with patch("tools.browser_camofox.requests.get", return_value=health_resp) as mock_get:
+            check_camofox_available()
+            check_camofox_available()
+        # Second call still hits /health for availability but doesn't re-parse vncPort
+        assert get_vnc_url() == "http://localhost:6080"
+
+    def test_navigate_includes_vnc_hint(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.setenv("CAMOFOX_URL", "http://localhost:9377")
+        import tools.browser_camofox as mod
+        mod._vnc_url = "http://localhost:6080"
+        mod._vnc_url_checked = True
+
+        with patch("tools.browser_camofox.requests.post", return_value=_mock_response(
+            json_data={"tabId": "t1", "url": "https://example.com"}
+        )):
+            result = json.loads(camofox_navigate("https://example.com", task_id="vnc-test"))
+
+        assert result["vnc_url"] == "http://localhost:6080"
+        assert "vnc_hint" in result
