@@ -579,6 +579,20 @@ BROWSER_TOOL_SCHEMAS = [
         }
     },
     {
+        "name": "browser_evaluate",
+        "description": "Evaluate a JavaScript expression in the current page context. Useful for horizontal scrolling (window.scrollBy(500,0)), extracting data, or interacting with elements not visible in the accessibility tree. Requires browser_navigate to be called first.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "description": "JavaScript expression to evaluate in the page context (e.g., 'window.scrollBy(500, 0)', 'document.title')"
+                }
+            },
+            "required": ["expression"]
+        }
+    },
+    {
         "name": "browser_close",
         "description": "Close the browser session and release resources. Call this when done with browser tasks to free up Browserbase session quota.",
         "parameters": {
@@ -1402,6 +1416,36 @@ def browser_press(key: str, task_id: Optional[str] = None) -> str:
         }, ensure_ascii=False)
 
 
+def browser_evaluate(expression: str, task_id: Optional[str] = None) -> str:
+    """
+    Evaluate a JavaScript expression in the current page context.
+
+    Args:
+        expression: JavaScript expression to evaluate
+        task_id: Task identifier for session isolation
+
+    Returns:
+        JSON string with evaluation result
+    """
+    if _is_camofox_mode():
+        from tools.browser_camofox import camofox_evaluate
+        return camofox_evaluate(expression, task_id)
+
+    effective_task_id = task_id or "default"
+    result = _run_browser_command(effective_task_id, "evaluate", [expression])
+
+    if result.get("success"):
+        return json.dumps({
+            "success": True,
+            "result": result.get("result"),
+        }, ensure_ascii=False)
+    else:
+        return json.dumps({
+            "success": False,
+            "error": result.get("error", "Failed to evaluate expression")
+        }, ensure_ascii=False)
+
+
 def browser_close(task_id: Optional[str] = None) -> str:
     """
     Close the browser session.
@@ -2022,6 +2066,14 @@ registry.register(
     handler=lambda args, **kw: browser_press(key=args.get("key", ""), task_id=kw.get("task_id")),
     check_fn=check_browser_requirements,
     emoji="⌨️",
+)
+registry.register(
+    name="browser_evaluate",
+    toolset="browser",
+    schema=_BROWSER_SCHEMA_MAP["browser_evaluate"],
+    handler=lambda args, **kw: browser_evaluate(expression=args.get("expression", ""), task_id=kw.get("task_id")),
+    check_fn=check_browser_requirements,
+    emoji="⚡",
 )
 registry.register(
     name="browser_close",

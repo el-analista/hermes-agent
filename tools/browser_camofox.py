@@ -391,6 +391,22 @@ def camofox_press(key: str, task_id: Optional[str] = None) -> str:
         return json.dumps({"success": False, "error": str(e)})
 
 
+def camofox_evaluate(expression: str, task_id: Optional[str] = None) -> str:
+    """Evaluate a JavaScript expression in the current page context via Camofox."""
+    try:
+        session = _get_session(task_id)
+        if not session["tab_id"]:
+            return json.dumps({"success": False, "error": "No browser session. Call browser_navigate first."})
+
+        data = _post(
+            f"/tabs/{session['tab_id']}/evaluate",
+            {"userId": session["user_id"], "expression": expression},
+        )
+        return json.dumps({"success": True, "result": data.get("result")})
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)})
+
+
 def camofox_close(task_id: Optional[str] = None) -> str:
     """Close the browser session via Camofox."""
     try:
