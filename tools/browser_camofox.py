@@ -522,7 +522,7 @@ def camofox_vision(question: str, annotate: bool = False,
         except Exception:
             _vision_timeout = 120
 
-        analysis = call_llm(
+        response = call_llm(
             messages=[{
                 "role": "user",
                 "content": [
@@ -538,6 +538,7 @@ def camofox_vision(question: str, annotate: bool = False,
             task="vision",
             timeout=_vision_timeout,
         )
+        analysis = response.choices[0].message.content if response.choices else ""
 
         return json.dumps({
             "success": True,
