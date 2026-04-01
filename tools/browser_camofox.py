@@ -276,18 +276,14 @@ def camofox_snapshot(full: bool = False, task_id: Optional[str] = None,
         snapshot = data.get("snapshot", "")
         refs_count = data.get("refsCount", 0)
 
-        # Apply same summarization logic as the main browser tool
-        from tools.browser_tool import (
-            SNAPSHOT_SUMMARIZE_THRESHOLD,
-            _extract_relevant_content,
-            _truncate_snapshot,
-        )
-
-        if len(snapshot) > SNAPSHOT_SUMMARIZE_THRESHOLD:
-            if user_task:
-                snapshot = _extract_relevant_content(snapshot, user_task)
-            else:
-                snapshot = _truncate_snapshot(snapshot)
+        # Truncate only if snapshot exceeds ~100K tokens (~400K chars).
+        # The browser_tool default (8K chars) is far too aggressive and cuts
+        # off sidebar elements (e.g. "Add to Watchlist" buttons) that appear
+        # late in the accessibility tree.  Camofox pages rarely exceed 80K
+        # chars (server-side limit), so this threshold is almost never hit.
+        _CAMOFOX_SNAPSHOT_MAX = 400_000
+        if len(snapshot) > _CAMOFOX_SNAPSHOT_MAX:
+            snapshot = snapshot[:_CAMOFOX_SNAPSHOT_MAX] + "\n\n[... content truncated ...]"
 
         return json.dumps({
             "success": True,
