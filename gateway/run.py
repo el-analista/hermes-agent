@@ -2158,7 +2158,7 @@ class GatewayRunner:
                     if command.replace("_", "-") not in GATEWAY_KNOWN_COMMANDS:
                         logger.warning(
                             "Unrecognized slash command /%s from %s — "
-                            "forwarding as plain text",
+                            "replying with unknown-command notice",
                             command,
                             source.platform.value if source.platform else "?",
                         )
