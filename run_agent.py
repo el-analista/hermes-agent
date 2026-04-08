@@ -715,6 +715,21 @@ class AIAgent:
                 daemon=True,
             ).start()
 
+        # Z.AI coding plan warning: the /api/coding/ endpoint enforces a
+        # concurrency limit of 1 request.  Concurrent cron jobs or parallel
+        # subagents will hit 429 errors.  Log once so the user knows.
+        if "/coding/" in self._base_url_lower and (
+            "z.ai" in self._base_url_lower or "bigmodel.cn" in self._base_url_lower
+        ):
+            logger.warning(
+                "Z.AI coding plan endpoint detected (%s). "
+                "This plan allows only 1 concurrent request. "
+                "Concurrent cron jobs or parallel agents sharing this key "
+                "will hit rate limits (429). Consider the standard endpoint "
+                "(/api/paas/v4) for higher concurrency.",
+                self.base_url,
+            )
+
         self.tool_progress_callback = tool_progress_callback
         self.tool_start_callback = tool_start_callback
         self.tool_complete_callback = tool_complete_callback
@@ -5144,6 +5159,20 @@ class AIAgent:
         if not fb_provider or not fb_model:
             return self._try_activate_fallback()  # skip invalid, try next
 
+        # Skip fallback entries that share the same base_url as the
+        # current (possibly rate-limited) endpoint.  Retrying a
+        # different model on the same concurrency-limited backend
+        # (e.g. Z.AI coding plan with 1 concurrent request) just
+        # doubles the 429 storm without helping.
+        fb_url_hint = (fb.get("base_url") or "").strip().lower().rstrip("/")
+        current_url = (self.base_url or "").strip().lower().rstrip("/")
+        if fb_url_hint and current_url and fb_url_hint == current_url:
+            logger.info(
+                "Skipping fallback %s/%s — same base_url as current (%s)",
+                fb_provider, fb_model, current_url,
+            )
+            return self._try_activate_fallback()  # try next in chain
+
         # Use centralized router for client construction.
         # raw_codex=True because the main agent needs direct responses.stream()
         # access for Codex providers.
@@ -5878,6 +5907,18 @@ class AIAgent:
 
         if self._is_qwen_portal():
             extra_body["vl_high_resolution_images"] = True
+
+        # Z.AI / GLM thinking parameter: controls chain-of-thought and
+        # reasoning_content retention across turns.  GLM-5.1/5/5-Turbo
+        # think compulsorily; this parameter lets Hermes control
+        # clear_thinking (strip prior reasoning from context).
+        _is_zai = "z.ai" in self._base_url_lower or "bigmodel.cn" in self._base_url_lower
+        if _is_zai and "glm" in (self.model or "").lower():
+            thinking = {"type": "enabled", "clear_thinking": True}
+            if self.reasoning_config and isinstance(self.reasoning_config, dict):
+                if self.reasoning_config.get("enabled") is False:
+                    thinking["type"] = "disabled"
+            extra_body["thinking"] = thinking
 
         if extra_body:
             api_kwargs["extra_body"] = extra_body
