@@ -59,6 +59,8 @@ def _make_runner():
     runner.session_store.rewrite_transcript = MagicMock()
     runner.session_store.update_session = MagicMock()
     runner._running_agents = {}
+    runner._force_stopped_sessions = {}
+    runner._session_generation = {}
     runner._pending_messages = {}
     runner._pending_approvals = {}
     runner._session_db = None

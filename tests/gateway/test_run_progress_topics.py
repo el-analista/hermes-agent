@@ -104,6 +104,8 @@ def _make_runner(adapter):
     runner._fallback_model = None
     runner._session_db = None
     runner._running_agents = {}
+    runner._force_stopped_sessions = {}
+    runner._session_generation = {}
     runner.hooks = SimpleNamespace(loaded_hooks=False)
     runner.config = SimpleNamespace(
         thread_sessions_per_user=False,

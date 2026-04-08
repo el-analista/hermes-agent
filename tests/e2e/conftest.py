@@ -181,6 +181,8 @@ def make_runner(platform: Platform, session_entry: SessionEntry = None) -> "Gate
     runner.session_store.reset_session = MagicMock()
 
     runner._running_agents = {}
+    runner._force_stopped_sessions = {}
+    runner._session_generation = {}
     runner._pending_messages = {}
     runner._pending_approvals = {}
     runner._session_db = None

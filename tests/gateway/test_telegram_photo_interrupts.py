@@ -19,6 +19,8 @@ def _make_runner():
     runner.config = GatewayConfig(platforms={Platform.TELEGRAM: PlatformConfig(enabled=True, token="***")})
     runner.adapters = {Platform.TELEGRAM: _PendingAdapter()}
     runner._running_agents = {}
+    runner._force_stopped_sessions = {}
+    runner._session_generation = {}
     runner._pending_messages = {}
     runner._pending_approvals = {}
     runner._voice_mode = {}

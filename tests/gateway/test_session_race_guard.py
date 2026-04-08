@@ -39,6 +39,8 @@ def _make_runner():
     runner._running_agents_ts = {}
     runner._pending_messages = {}
     runner._pending_approvals = {}
+    runner._force_stopped_sessions = {}
+    runner._session_generation = {}
     runner._voice_mode = {}
     runner._background_tasks = set()
     runner._draining = False
@@ -290,6 +292,10 @@ async def test_stop_hard_kills_running_agent():
     # Must return a confirmation
     assert result is not None
     assert "stopped" in result.lower()
+
+    # Session must be marked as force-stopped so the original handler
+    # suppresses the stale response when the agent thread finishes.
+    assert session_key in runner._force_stopped_sessions
 
 
 # ------------------------------------------------------------------

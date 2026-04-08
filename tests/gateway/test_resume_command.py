@@ -39,6 +39,8 @@ def _make_runner(session_db=None, current_session_id="current_session_001",
     runner._voice_mode = {}
     runner._session_db = session_db
     runner._running_agents = {}
+    runner._force_stopped_sessions = {}
+    runner._session_generation = {}
 
     # Compute the real session key if an event is provided
     session_key = build_session_key(event.source) if event else "agent:main:telegram:dm"

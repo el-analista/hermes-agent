@@ -29,6 +29,8 @@ def _make_runner():
     runner._honcho_managers = {}
     runner._honcho_configs = {}
     runner._running_agents = {}
+    runner._force_stopped_sessions = {}
+    runner._session_generation = {}
     runner._pending_messages = {}
     runner._pending_approvals = {}
     runner.adapters = {}

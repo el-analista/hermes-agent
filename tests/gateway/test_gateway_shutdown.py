@@ -41,6 +41,10 @@ async def test_gateway_stop_interrupts_running_agents_and_cancels_adapter_tasks(
     runner._pending_messages = {"session": "pending text"}
     runner._pending_approvals = {"session": {"command": "rm -rf /tmp/x"}}
     runner._restart_drain_timeout = 0.0
+    runner._force_stopped_sessions = {}
+    runner._session_generation = {}
+    runner._background_tasks = set()
+    runner._shutdown_all_gateway_honcho = lambda: None
 
     release = asyncio.Event()
 
