@@ -133,6 +133,8 @@ class TestGatewayQuickCommands:
         runner = GatewayRunner.__new__(GatewayRunner)
         runner.config = {"quick_commands": {"limits": {"type": "exec", "command": "echo ok"}}}
         runner._running_agents = {}
+        runner._force_stopped_sessions = {}
+        runner._session_generation = {}
         runner._pending_messages = {}
         runner._is_user_authorized = MagicMock(return_value=True)
 
@@ -146,6 +148,8 @@ class TestGatewayQuickCommands:
         runner = GatewayRunner.__new__(GatewayRunner)
         runner.config = {"quick_commands": {"bad": {"type": "prompt", "command": "echo hi"}}}
         runner._running_agents = {}
+        runner._force_stopped_sessions = {}
+        runner._session_generation = {}
         runner._pending_messages = {}
         runner._is_user_authorized = MagicMock(return_value=True)
 
@@ -161,6 +165,8 @@ class TestGatewayQuickCommands:
         runner = GatewayRunner.__new__(GatewayRunner)
         runner.config = {"quick_commands": {"slow": {"type": "exec", "command": "sleep 100"}}}
         runner._running_agents = {}
+        runner._force_stopped_sessions = {}
+        runner._session_generation = {}
         runner._pending_messages = {}
         runner._is_user_authorized = MagicMock(return_value=True)
 
@@ -180,6 +186,8 @@ class TestGatewayQuickCommands:
             quick_commands={"limits": {"type": "exec", "command": "echo ok"}}
         )
         runner._running_agents = {}
+        runner._force_stopped_sessions = {}
+        runner._session_generation = {}
         runner._pending_messages = {}
         runner._is_user_authorized = MagicMock(return_value=True)
 

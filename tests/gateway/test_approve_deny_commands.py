@@ -54,6 +54,8 @@ def _make_runner():
     runner.hooks = SimpleNamespace(emit=AsyncMock(), loaded_hooks=False)
     runner.session_store = MagicMock()
     runner._running_agents = {}
+    runner._force_stopped_sessions = {}
+    runner._session_generation = {}
     runner._pending_messages = {}
     runner._pending_approvals = {}
     runner._background_tasks = set()

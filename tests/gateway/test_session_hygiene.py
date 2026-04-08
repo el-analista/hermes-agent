@@ -344,6 +344,8 @@ async def test_session_hygiene_messages_stay_in_originating_topic(monkeypatch, t
     runner.session_store.rewrite_transcript = MagicMock()
     runner.session_store.append_to_transcript = MagicMock()
     runner._running_agents = {}
+    runner._force_stopped_sessions = {}
+    runner._session_generation = {}
     runner._pending_messages = {}
     runner._pending_approvals = {}
     runner._session_db = None

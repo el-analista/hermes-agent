@@ -502,6 +502,13 @@ class GatewayRunner:
         self._running_agents: Dict[str, Any] = {}
         self._running_agents_ts: Dict[str, float] = {}  # start timestamp per session
         self._pending_messages: Dict[str, str] = {}  # Queued messages during interrupt
+        # Track force-stopped sessions so the original handler suppresses
+        # the stale response.  Maps session_key → generation counter at the
+        # time of the stop.  The handler only suppresses if its own
+        # generation matches, preventing a subsequent request from being
+        # accidentally suppressed.
+        self._force_stopped_sessions: Dict[str, int] = {}
+        self._session_generation: Dict[str, int] = {}  # monotonic counter per session
 
         # Cache AIAgent instances per session to preserve prompt caching.
         # Without this, a new AIAgent is created per message, rebuilding the
@@ -1914,6 +1921,10 @@ class GatewayRunner:
                 running_agent = self._running_agents.get(_quick_key)
                 if running_agent and running_agent is not _AGENT_PENDING_SENTINEL:
                     running_agent.interrupt("Stop requested")
+                # Mark session as force-stopped so the original handler
+                # suppresses the agent's response when it eventually returns.
+                _gen = self._session_generation.get(_quick_key, 0)
+                self._force_stopped_sessions[_quick_key] = _gen
                 # Force-clean: remove the session lock regardless of agent state
                 adapter = self.adapters.get(source.platform)
                 if adapter and hasattr(adapter, 'get_pending_message'):
@@ -1999,6 +2010,8 @@ class GatewayRunner:
                 # Agent is being set up but not ready yet.
                 if event.get_command() == "stop":
                     # Force-clean the sentinel so the session is unlocked.
+                    _gen = self._session_generation.get(_quick_key, 0)
+                    self._force_stopped_sessions[_quick_key] = _gen
                     if _quick_key in self._running_agents:
                         del self._running_agents[_quick_key]
                     logger.info("HARD STOP (pending) for session %s — sentinel cleared", _quick_key[:20])
@@ -2308,6 +2321,12 @@ class GatewayRunner:
         # Get or create session
         session_entry = self.session_store.get_or_create_session(source)
         session_key = session_entry.session_key
+
+        # Bump generation counter for this session so /stop can target
+        # this specific handler invocation (not a subsequent one).
+        _prev_gen = self._session_generation.get(session_key, 0)
+        _my_generation = _prev_gen + 1
+        self._session_generation[session_key] = _my_generation
         
         # Emit session:start for new or auto-reset sessions
         _is_new_session = (
@@ -2914,6 +2933,21 @@ class GatewayRunner:
             except Exception:
                 pass
 
+            # If this session was force-stopped via /stop while the agent
+            # was running, suppress the (now stale) response.  The /stop
+            # handler already sent "Force-stopped" to the user.
+            # Only suppress if the stopped generation matches this handler's
+            # generation — a newer request should NOT be suppressed.
+            if session_key and session_key in self._force_stopped_sessions:
+                _stopped_gen = self._force_stopped_sessions[session_key]
+                if _stopped_gen == _my_generation:
+                    del self._force_stopped_sessions[session_key]
+                    logger.info(
+                        "Suppressing agent response for force-stopped session %s (gen=%d)",
+                        session_key[:20], _stopped_gen,
+                    )
+                    return None
+
             response = agent_result.get("final_response") or ""
             agent_messages = agent_result.get("messages", [])
             _response_time = time.time() - _msg_start_time
@@ -3390,12 +3424,16 @@ class GatewayRunner:
         agent = self._running_agents.get(session_key)
         if agent is _AGENT_PENDING_SENTINEL:
             # Force-clean the sentinel so the session is unlocked.
+            _gen = self._session_generation.get(session_key, 0)
+            self._force_stopped_sessions[session_key] = _gen
             if session_key in self._running_agents:
                 del self._running_agents[session_key]
             logger.info("HARD STOP (pending) for session %s — sentinel cleared", session_key[:20])
             return "⚡ Force-stopped. The agent was still starting — session unlocked."
         if agent:
             agent.interrupt("Stop requested")
+            _gen = self._session_generation.get(session_key, 0)
+            self._force_stopped_sessions[session_key] = _gen
             # Force-clean the session lock so a truly hung agent doesn't
             # keep it locked forever.
             if session_key in self._running_agents:

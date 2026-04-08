@@ -84,6 +84,8 @@ def make_runner(session_entry: SessionEntry) -> "GatewayRunner":
     runner.session_store.reset_session = MagicMock()
 
     runner._running_agents = {}
+    runner._force_stopped_sessions = {}
+    runner._session_generation = {}
     runner._pending_messages = {}
     runner._pending_approvals = {}
     runner._session_db = None

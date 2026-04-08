@@ -55,6 +55,8 @@ def _make_runner():
     runner.session_store._entries = {session_key: session_entry}
     runner.session_store._generate_session_key.return_value = session_key
     runner._running_agents = {}
+    runner._force_stopped_sessions = {}
+    runner._session_generation = {}
     runner._pending_messages = {}
     runner._pending_approvals = {}
     runner._session_db = None
