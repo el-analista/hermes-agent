@@ -4433,7 +4433,12 @@ class HermesCLI:
                 else:
                     _cprint("  Session database not available.")
         elif canonical == "new":
+            parts = cmd_original.split(maxsplit=1)
             self.new_session()
+            if len(parts) > 1:
+                inline_msg = parts[1].strip()
+                if inline_msg:
+                    self._pending_input.put(inline_msg)
         elif canonical == "resume":
             self._handle_resume_command(cmd_original)
         elif canonical == "model":

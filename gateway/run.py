@@ -1944,7 +1944,7 @@ class GatewayRunner:
                 # doesn't think an agent is still active.
                 if _quick_key in self._running_agents:
                     del self._running_agents[_quick_key]
-                return await self._handle_reset_command(event)
+                return await self._reset_with_inline(event, source, _quick_key)
 
             # /queue <prompt> — queue without interrupting
             if event.get_command() in ("queue", "q"):
@@ -2037,7 +2037,7 @@ class GatewayRunner:
         canonical = _cmd_def.name if _cmd_def else command
 
         if canonical == "new":
-            return await self._handle_reset_command(event)
+            return await self._reset_with_inline(event, source, _quick_key)
         
         if canonical == "help":
             return await self._handle_help_command(event)
@@ -3307,7 +3307,72 @@ class GatewayRunner:
         if session_info:
             return f"{header}\n\n{session_info}"
         return header
-    
+
+    async def _reset_with_inline(self, event: MessageEvent, source, _quick_key: str) -> Optional[str]:
+        """Handle /new or /reset, optionally processing inline text after reset.
+
+        If the command has trailing text (e.g. ``/new hello``), the session is
+        reset, the confirmation is sent immediately, and the inline text is
+        dispatched to the agent as the first message of the fresh session.
+        """
+        import copy
+        from dataclasses import replace as _dc_replace
+
+        # Extract inline args BEFORE reset so we don't depend on post-reset state.
+        inline_text = event.get_command_args().strip()
+
+        # Claim the session synchronously before any await to prevent a second
+        # message from passing the "no running agent" guard while we do async
+        # reset/send work.  Cleaned up in the finally block below, or in the
+        # early-return path when there is no inline text.
+        self._running_agents[_quick_key] = _AGENT_PENDING_SENTINEL
+        self._running_agents_ts[_quick_key] = time.time()
+        try:
+            reset_response = await self._handle_reset_command(event)
+            if not inline_text:
+                return reset_response
+
+            # Send reset confirmation first so the user sees it immediately.
+            adapter = self.adapters.get(source.platform)
+            if adapter:
+                _thread_meta = {"thread_id": source.thread_id} if source.thread_id else None
+                await adapter.send(
+                    chat_id=source.chat_id,
+                    content=reset_response,
+                    reply_to=event.message_id,
+                    metadata=_thread_meta,
+                )
+            else:
+                # No adapter — return confirmation for the caller to send.
+                return reset_response
+
+            # Clone the original event, replacing only text.  dataclasses.replace
+            # preserves media, reply context, raw_message, auto_skill, etc.
+            inline_event = _dc_replace(
+                event,
+                text=inline_text,
+                message_type=MessageType.TEXT,
+                source=copy.copy(event.source),
+            )
+
+            # Dispatch directly to the agent (skips auth / command re-parsing).
+            return await self._handle_message_with_agent(inline_event, source, _quick_key)
+        except Exception as e:
+            logger.error("Inline message dispatch after /new failed: %s", e, exc_info=True)
+            adapter = self.adapters.get(source.platform)
+            if adapter:
+                _thread_meta = {"thread_id": source.thread_id} if source.thread_id else None
+                await adapter.send(
+                    chat_id=source.chat_id,
+                    content="Session was reset, but your message could not be processed. Please resend.",
+                    metadata=_thread_meta,
+                )
+            return None
+        finally:
+            if self._running_agents.get(_quick_key) is _AGENT_PENDING_SENTINEL:
+                del self._running_agents[_quick_key]
+            self._running_agents_ts.pop(_quick_key, None)
+
     async def _handle_profile_command(self, event: MessageEvent) -> str:
         """Handle /profile — show active profile name and home directory."""
         from hermes_constants import get_hermes_home, display_hermes_home
