@@ -173,6 +173,72 @@ class TestAuthorization:
             assert "/new" not in response_text
 
 
+class TestNewInlineMessage:
+    """Verify /new <message> resets session then dispatches inline text."""
+
+    @pytest.mark.asyncio
+    async def test_new_with_inline_text_sends_reset_then_dispatches(self, adapter, runner):
+        """/new hello should send the reset confirmation AND dispatch 'hello' to agent."""
+        # Mock _handle_message_with_agent so the inline dispatch doesn't need a real agent.
+        runner._handle_message_with_agent = AsyncMock(return_value="Agent response")
+        runner._running_agents_ts = {}
+
+        await send_and_capture(adapter, "/new hello world")
+
+        # Session was reset
+        runner.session_store.reset_session.assert_called_once()
+
+        # At least two sends: reset confirmation + agent response
+        assert adapter.send.call_count >= 2
+        first_call_content = adapter.send.call_args_list[0][1].get("content", "")
+        assert "reset" in first_call_content.lower() or "new session" in first_call_content.lower() or "✨" in first_call_content
+
+        # _handle_message_with_agent was called with the inline text
+        runner._handle_message_with_agent.assert_called_once()
+        inline_event = runner._handle_message_with_agent.call_args[0][0]
+        assert inline_event.text == "hello world"
+
+    @pytest.mark.asyncio
+    async def test_new_without_args_does_not_dispatch(self, adapter, runner):
+        """/new with no trailing text should only reset, not call the agent."""
+        runner._handle_message_with_agent = AsyncMock()
+        runner._running_agents_ts = {}
+
+        await send_and_capture(adapter, "/new")
+
+        runner.session_store.reset_session.assert_called_once()
+        runner._handle_message_with_agent.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_new_inline_preserves_source(self, adapter, runner):
+        """The synthetic event for the inline message must have an isolated source copy."""
+        runner._handle_message_with_agent = AsyncMock(return_value=None)
+        runner._running_agents_ts = {}
+
+        event = make_event("/new check this")
+        original_source_id = id(event.source)
+
+        adapter.send.reset_mock()
+        await adapter.handle_message(event)
+        await asyncio.sleep(0.3)
+
+        runner._handle_message_with_agent.assert_called_once()
+        inline_event = runner._handle_message_with_agent.call_args[0][0]
+        # Source should be a copy, not the same object
+        assert id(inline_event.source) != original_source_id
+
+    @pytest.mark.asyncio
+    async def test_new_whitespace_only_does_not_dispatch(self, adapter, runner):
+        """/new followed by only spaces should behave like bare /new."""
+        runner._handle_message_with_agent = AsyncMock()
+        runner._running_agents_ts = {}
+
+        await send_and_capture(adapter, "/new    ")
+
+        runner.session_store.reset_session.assert_called_once()
+        runner._handle_message_with_agent.assert_not_called()
+
+
 class TestSendFailureResilience:
     """Verify the pipeline handles send failures gracefully."""
 

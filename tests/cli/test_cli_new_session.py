@@ -220,3 +220,51 @@ def test_new_session_resets_token_counters(tmp_path):
     assert comp.last_total_tokens == 0
     assert comp.compression_count == 0
     assert comp._context_probed is False
+
+
+def test_new_command_with_inline_message_queues_to_pending_input(tmp_path):
+    """``/new hello`` should reset the session AND queue 'hello' for the agent."""
+    cli = _prepare_cli_with_active_session(tmp_path)
+    old_session_id = cli.session_id
+
+    cli.process_command("/new find best korean barbeque for 7")
+
+    # Session was reset
+    assert cli.session_id != old_session_id
+    assert cli.conversation_history == []
+    cli.agent.flush_memories.assert_called_once()
+
+    # Inline message was queued
+    assert not cli._pending_input.empty()
+    queued = cli._pending_input.get_nowait()
+    assert queued == "find best korean barbeque for 7"
+
+
+def test_new_command_without_args_does_not_queue(tmp_path):
+    """/new with no trailing text should NOT put anything in the queue."""
+    cli = _prepare_cli_with_active_session(tmp_path)
+
+    cli.process_command("/new")
+
+    assert cli._pending_input.empty()
+
+
+def test_new_command_whitespace_only_does_not_queue(tmp_path):
+    """/new followed by only spaces should behave like bare /new."""
+    cli = _prepare_cli_with_active_session(tmp_path)
+
+    cli.process_command("/new    ")
+
+    assert cli._pending_input.empty()
+
+
+def test_reset_alias_with_inline_message(tmp_path):
+    """/reset <msg> should behave identically to /new <msg>."""
+    cli = _prepare_cli_with_active_session(tmp_path)
+    old_session_id = cli.session_id
+
+    cli.process_command("/reset hello world")
+
+    assert cli.session_id != old_session_id
+    assert not cli._pending_input.empty()
+    assert cli._pending_input.get_nowait() == "hello world"
