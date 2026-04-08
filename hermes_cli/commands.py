@@ -58,8 +58,8 @@ class CommandDef:
 
 COMMAND_REGISTRY: list[CommandDef] = [
     # Session
-    CommandDef("new", "Start a new session (fresh session ID + history)", "Session",
-               aliases=("reset",)),
+    CommandDef("new", "Start a new session, optionally with a first message", "Session",
+               aliases=("reset",), args_hint="[initial prompt]"),
     CommandDef("clear", "Clear screen and start a new session", "Session",
                cli_only=True),
     CommandDef("history", "Show conversation history", "Session",
