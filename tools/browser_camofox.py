@@ -101,7 +101,8 @@ def _managed_persistence_enabled() -> bool:
     """
     try:
         camofox_cfg = load_config().get("browser", {}).get("camofox", {})
-    except Exception:
+    except Exception as exc:
+        logger.warning("managed_persistence check failed, defaulting to disabled: %s", exc)
         return False
     return bool(camofox_cfg.get("managed_persistence"))
 

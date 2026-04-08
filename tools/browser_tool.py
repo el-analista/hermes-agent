@@ -1935,11 +1935,18 @@ def cleanup_browser(task_id: Optional[str] = None) -> None:
     if task_id is None:
         task_id = "default"
     
-    # Also clean up Camofox session if running in Camofox mode
+    # Also clean up Camofox session if running in Camofox mode.
+    # Skip cleanup when managed persistence is enabled — the whole point
+    # is that the browser profile (and its session cookies) survives across
+    # agent tasks.  The inactivity reaper still frees idle resources.
     if _is_camofox_mode():
         try:
-            from tools.browser_camofox import camofox_close
-            camofox_close(task_id)
+            from tools.browser_camofox import camofox_close, _managed_persistence_enabled, _drop_session
+            if _managed_persistence_enabled():
+                _drop_session(task_id)
+                logger.debug("Camofox cleanup skipped for task %s (managed persistence)", task_id)
+            else:
+                camofox_close(task_id)
         except Exception as e:
             logger.debug("Camofox cleanup for task %s: %s", task_id, e)
 
