@@ -75,11 +75,23 @@ class BrowserUseProvider(CloudBrowserProvider):
 
     def _get_config_or_none(self) -> Optional[Dict[str, Any]]:
         api_key = os.environ.get("BROWSER_USE_API_KEY")
+        profile_id = os.environ.get("BROWSER_USE_PROFILE_ID")
+
+        # Fall back to config.yaml if not set as env var
+        if not profile_id:
+            try:
+                from hermes_cli.config import read_raw_config
+                cfg = read_raw_config()
+                profile_id = cfg.get("browser", {}).get("browser_use", {}).get("profile_id")
+            except Exception:
+                pass
+
         if api_key:
             return {
                 "api_key": api_key,
                 "base_url": _BASE_URL,
                 "managed_mode": False,
+                "profile_id": profile_id,
             }
 
         managed = resolve_managed_tool_gateway("browser-use")
@@ -90,6 +102,7 @@ class BrowserUseProvider(CloudBrowserProvider):
             "api_key": managed.nous_user_token,
             "base_url": managed.gateway_origin.rstrip("/"),
             "managed_mode": True,
+            "profile_id": profile_id,
         }
 
     def _get_config(self) -> Dict[str, Any]:
@@ -128,14 +141,13 @@ class BrowserUseProvider(CloudBrowserProvider):
         # Keep gateway-backed sessions short so billing authorization does not
         # default to a long Browser-Use timeout when Hermes only needs a task-
         # scoped ephemeral browser.
-        payload = (
-            {
-                "timeout": _DEFAULT_MANAGED_TIMEOUT_MINUTES,
-                "proxyCountryCode": _DEFAULT_MANAGED_PROXY_COUNTRY_CODE,
-            }
-            if managed_mode
-            else {}
-        )
+        profile_id = config.get("profile_id")
+        payload: Dict[str, Any] = {}
+        if managed_mode:
+            payload["timeout"] = _DEFAULT_MANAGED_TIMEOUT_MINUTES
+            payload["proxyCountryCode"] = _DEFAULT_MANAGED_PROXY_COUNTRY_CODE
+        if profile_id:
+            payload["profileId"] = profile_id
 
         response = requests.post(
             f"{config['base_url']}/browsers",
