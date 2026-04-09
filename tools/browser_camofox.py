@@ -47,6 +47,11 @@ _SNAPSHOT_MAX_CHARS = 80_000  # camofox paginates at this limit
 _vnc_url: Optional[str] = None  # cached from /health response
 _vnc_url_checked = False  # only probe once per process
 
+# Cached result for is_camofox_mode() — resolved once per process lifetime,
+# same pattern as _get_cloud_provider() in browser_tool.py.
+_camofox_mode_resolved = False
+_camofox_mode_cached = False
+
 
 def get_camofox_url() -> str:
     """Return the configured Camofox server URL, or empty string."""
@@ -54,8 +59,36 @@ def get_camofox_url() -> str:
 
 
 def is_camofox_mode() -> bool:
-    """True when Camofox backend is configured."""
-    return bool(get_camofox_url())
+    """True when Camofox backend is configured and not overridden by config.
+
+    If ``browser.cloud_provider`` in config.yaml is explicitly set to a
+    non-camofox provider (e.g. ``browser-use``, ``browserbase``), the
+    config takes precedence and Camofox mode is disabled even when
+    ``CAMOFOX_URL`` is present in the environment.
+
+    The result is resolved once and cached for the process lifetime.
+    """
+    global _camofox_mode_resolved, _camofox_mode_cached
+    if _camofox_mode_resolved:
+        return _camofox_mode_cached
+    _camofox_mode_resolved = True
+
+    if not get_camofox_url():
+        return False
+    try:
+        from hermes_cli.config import read_raw_config
+        from tools.tool_backend_helpers import normalize_browser_cloud_provider
+
+        provider = normalize_browser_cloud_provider(
+            read_raw_config().get("browser", {}).get("cloud_provider")
+        )
+        # An explicit non-local, non-camofox provider in config wins.
+        if provider not in ("local", "camofox"):
+            return False
+    except Exception:
+        pass
+    _camofox_mode_cached = True
+    return True
 
 
 def check_camofox_available() -> bool:
