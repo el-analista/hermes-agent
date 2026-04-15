@@ -59,15 +59,21 @@ def get_camofox_url() -> str:
 
 
 def is_camofox_mode() -> bool:
-    """True when Camofox backend is configured and not overridden by config.
+    """True when Camofox backend is configured and not overridden by config or CDP.
 
-    If ``browser.cloud_provider`` in config.yaml is explicitly set to a
-    non-camofox provider (e.g. ``browser-use``, ``browserbase``), the
-    config takes precedence and Camofox mode is disabled even when
-    ``CAMOFOX_URL`` is present in the environment.
+    Priority order (highest wins):
+    1. ``BROWSER_CDP_URL`` set → CDP connection takes priority (user explicitly
+       connected to a live Chrome via ``/browser connect``).
+    2. ``browser.cloud_provider`` in config.yaml set to a non-camofox provider
+       (e.g. ``browser-use``, ``browserbase``) → config wins over env var.
+    3. ``CAMOFOX_URL`` set → Camofox mode enabled.
 
     The result is resolved once and cached for the process lifetime.
     """
+    # CDP override takes hard priority — user explicitly connected to a live Chrome.
+    if os.getenv("BROWSER_CDP_URL", "").strip():
+        return False
+
     global _camofox_mode_resolved, _camofox_mode_cached
     if _camofox_mode_resolved:
         return _camofox_mode_cached
