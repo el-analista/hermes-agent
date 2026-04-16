@@ -5,6 +5,9 @@ shared slash-command pipeline (`/model` in CLI/gateway/Telegram) historically
 only looked at `providers:`.
 """
 
+import os
+
+import agent.models_dev as models_dev_mod
 import hermes_cli.providers as providers_mod
 from hermes_cli.model_switch import list_authenticated_providers, switch_model
 from hermes_cli.providers import resolve_provider_full
@@ -133,6 +136,54 @@ def test_list_groups_same_name_custom_providers_into_one_row(monkeypatch):
     moonshot_rows = [p for p in providers if p["name"] == "Moonshot"]
     assert len(moonshot_rows) == 1
     assert moonshot_rows[0]["models"] == ["kimi-k2-thinking"]
+
+
+def test_list_authenticated_providers_no_duplicate_when_two_hermes_ids_share_mdev_id(monkeypatch):
+    """Two Hermes IDs that map to the same models.dev provider ID must not both
+    appear in the /model picker with identical display names.
+
+    Regression for the bug where PROVIDER_TO_MODELS_DEV contained both
+    "openai"+"openai-codex" → mdev "openai" and "gemini"+"google" → mdev
+    "google", causing two identically-named buttons to appear in section 1 of
+    list_authenticated_providers.  Fixed by tracking seen_mdev_ids so only the
+    first Hermes ID for each mdev_id is processed in section 1; the second
+    flows to section 2/2b with its proper display label.
+    """
+    # Inject two Hermes IDs that share the same mdev ID
+    fake_mdev_id = "fake-provider-mdev"
+    fake_prov_data = {"env": ["FAKE_PROVIDER_API_KEY"], "name": "Fake Provider"}
+
+    monkeypatch.setattr(
+        "agent.models_dev.fetch_models_dev",
+        lambda: {fake_mdev_id: fake_prov_data},
+    )
+    monkeypatch.setattr(
+        models_dev_mod,
+        "PROVIDER_TO_MODELS_DEV",
+        {"fake-provider-a": fake_mdev_id, "fake-provider-b": fake_mdev_id},
+    )
+    monkeypatch.setattr(providers_mod, "HERMES_OVERLAYS", {})
+
+    # Both have the same API key env var set
+    monkeypatch.setenv("FAKE_PROVIDER_API_KEY", "test-key")
+
+    # Stub out PROVIDER_REGISTRY so neither has api_key_env_vars overrides
+    import hermes_cli.auth as auth_mod
+    monkeypatch.setattr(auth_mod, "PROVIDER_REGISTRY", {})
+
+    providers = list_authenticated_providers(
+        current_provider="fake-provider-a",
+        user_providers={},
+        custom_providers=None,
+        max_models=50,
+    )
+
+    # Both Hermes IDs share the same mdev ID → only one row should appear
+    fake_rows = [p for p in providers if "fake-provider" in p["slug"]]
+    assert len(fake_rows) == 1, (
+        f"Expected exactly 1 row for the shared mdev ID, got {len(fake_rows)}: "
+        + str([p["slug"] for p in fake_rows])
+    )
 
 
 def test_list_deduplicates_same_model_in_group(monkeypatch):

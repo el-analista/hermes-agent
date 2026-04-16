@@ -3635,6 +3635,12 @@ class GatewayRunner:
                 # Must run after runtime resolution so _hyg_base_url is set.
                 if _hyg_config_context_length is None and _hyg_base_url:
                     try:
+                        # Intentionally uses get_compatible_custom_providers (merged
+                        # providers + custom_providers view) for per-model context-length
+                        # lookup — this site needs to find the entry regardless of which
+                        # config format the user is on.  The /model picker path (below)
+                        # deliberately uses the raw cfg.get("custom_providers") instead
+                        # to avoid double-counting providers: dict entries.
                         try:
                             from hermes_cli.config import get_compatible_custom_providers as _gw_gcp
                             _hyg_custom_providers = _gw_gcp(_hyg_data)
@@ -4629,11 +4635,13 @@ class GatewayRunner:
                     current_provider = model_cfg.get("provider", current_provider)
                     current_base_url = model_cfg.get("base_url", "")
                 user_provs = cfg.get("providers")
-                try:
-                    from hermes_cli.config import get_compatible_custom_providers
-                    custom_provs = get_compatible_custom_providers(cfg)
-                except Exception:
-                    custom_provs = cfg.get("custom_providers")
+                # Pass only the raw legacy custom_providers list, not the
+                # compat view from get_compatible_custom_providers().  The
+                # compat view converts the `providers` dict into custom-provider
+                # entries, which would be processed again in section 3 of
+                # list_authenticated_providers (user_providers loop), causing
+                # every `providers:` entry to appear twice in the /model picker.
+                custom_provs = cfg.get("custom_providers") or None
         except Exception:
             pass
 

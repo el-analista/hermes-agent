@@ -26,6 +26,51 @@ def _make_event(text="/model"):
 
 
 @pytest.mark.asyncio
+async def test_handle_model_command_no_duplicate_when_using_providers_dict(tmp_path, monkeypatch):
+    """Providers defined in providers: dict must not appear twice in the /model picker.
+
+    Regression for the bug where get_compatible_custom_providers() converted the
+    providers dict into custom_providers entries, and list_authenticated_providers
+    then processed the same provider in both the user_providers loop (section 3)
+    and the custom_providers loop (section 4), producing two identical buttons.
+    """
+    hermes_home = tmp_path / ".hermes"
+    hermes_home.mkdir()
+    (hermes_home / "config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "model": {
+                    "default": "carnice-llama-q6-128k",
+                    "provider": "carnice-llama.cpp",
+                },
+                "providers": {
+                    "carnice-llama.cpp": {
+                        "api": "http://127.0.0.1:8080/v1",
+                        "name": "Carnice llama.cpp",
+                        "default_model": "carnice-llama-q6-128k",
+                        "transport": "chat_completions",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    import gateway.run as gateway_run
+
+    monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
+    monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
+
+    result = await _make_runner()._handle_model_command(_make_event())
+
+    assert result is not None
+    # "Carnice llama.cpp" should appear exactly once — not twice
+    assert result.count("Carnice llama.cpp") == 1, (
+        f"Expected exactly one 'Carnice llama.cpp' entry in /model output, got:\n{result}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_handle_model_command_lists_saved_custom_provider(tmp_path, monkeypatch):
     hermes_home = tmp_path / ".hermes"
     hermes_home.mkdir()

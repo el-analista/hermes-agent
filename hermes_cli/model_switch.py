@@ -808,7 +808,9 @@ def list_authenticated_providers(
         # Skip aliases that map to the same models.dev provider (e.g.
         # kimi-coding and kimi-coding-cn both → kimi-for-coding).
         # The first one with valid credentials wins (#10526).
+        # Block the slug so later sections (2b, 3) can't re-emit it.
         if mdev_id in seen_mdev_ids:
+            seen_slugs.add(hermes_id.lower())
             continue
         pdata = data.get(mdev_id)
         if not isinstance(pdata, dict):
