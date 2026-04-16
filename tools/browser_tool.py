@@ -455,6 +455,18 @@ def _emergency_cleanup_all_sessions():
 
     try:
         cleanup_all_browsers()
+        
+        # Also clean up any browser-use cloud sessions
+        # This prevents orphaned sessions from consuming the free tier's 3-session limit
+        try:
+            from tools.browser_providers.browser_use import BrowserUseProvider
+            provider = BrowserUseProvider()
+            if provider.is_configured():
+                cleaned = provider.cleanup_all_sessions()
+                if cleaned > 0:
+                    logger.info("Cleaned up %d browser-use cloud session(s)", cleaned)
+        except Exception as e:
+            logger.debug("Failed to cleanup browser-use sessions: %s", e)
     except Exception as e:
         logger.error("Emergency cleanup error: %s", e)
     finally:
@@ -2172,7 +2184,7 @@ def cleanup_browser(task_id: Optional[str] = None) -> None:
             provider = _get_cloud_provider()
             if provider is not None:
                 try:
-                    provider.close_session(bb_session_id)
+                    provider.close_session(bb_session_id, task_id)
                 except Exception as e:
                     logger.warning("Could not close cloud browser session: %s", e)
         

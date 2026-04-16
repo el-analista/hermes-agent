@@ -1,10 +1,15 @@
-"""Browser Use cloud browser provider."""
+"""Browser Use cloud browser provider.
+
+This provider creates ephemeral browser sessions via browser-use cloud API.
+Sessions are automatically cleaned up when Hermes exits to prevent orphaned
+sessions from consuming the free tier's 3-session limit.
+"""
 
 import logging
 import os
 import threading
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 
@@ -15,6 +20,8 @@ from tools.tool_backend_helpers import managed_nous_tools_enabled
 logger = logging.getLogger(__name__)
 _pending_create_keys: Dict[str, str] = {}
 _pending_create_keys_lock = threading.Lock()
+_active_browser_sessions: Dict[str, str] = {}  # task_id -> session_id
+_active_sessions_lock = threading.Lock()
 
 _BASE_URL = "https://api.browser-use.com/api/v3"
 _DEFAULT_MANAGED_TIMEOUT_MINUTES = 5
@@ -35,6 +42,25 @@ def _get_or_create_pending_create_key(task_id: str) -> str:
 def _clear_pending_create_key(task_id: str) -> None:
     with _pending_create_keys_lock:
         _pending_create_keys.pop(task_id, None)
+
+
+def _register_session(task_id: str, session_id: str) -> None:
+    """Register an active browser session for tracking and cleanup."""
+    with _active_sessions_lock:
+        _active_browser_sessions[task_id] = session_id
+        logger.debug("Registered browser session %s for task %s", session_id, task_id)
+
+
+def _unregister_session(task_id: str) -> None:
+    """Unregister a browser session after successful cleanup."""
+    with _active_sessions_lock:
+        _active_browser_sessions.pop(task_id, None)
+
+
+def _get_active_sessions() -> List[str]:
+    """Get list of all active browser session IDs."""
+    with _active_sessions_lock:
+        return list(_active_browser_sessions.values())
 
 
 def _should_preserve_pending_create_key(response: requests.Response) -> bool:
@@ -161,16 +187,26 @@ class BrowserUseProvider(CloudBrowserProvider):
         logger.info("Created Browser Use session %s", session_name)
 
         cdp_url = session_data.get("cdpUrl") or session_data.get("connectUrl") or ""
+        
+        # Register the session for tracking and cleanup
+        session_id = session_data["id"]
+        _register_session(task_id, session_id)
 
         return {
             "session_name": session_name,
-            "bb_session_id": session_data["id"],
+            "bb_session_id": session_id,
             "cdp_url": cdp_url,
             "features": {"browser_use": True},
             "external_call_id": external_call_id,
         }
 
-    def close_session(self, session_id: str) -> bool:
+    def close_session(self, session_id: str, task_id: Optional[str] = None) -> bool:
+        """Close a browser session and destroy the sandbox entirely.
+
+        Args:
+            session_id: The browser session ID to close
+            task_id: Optional task ID for cleanup tracking
+        """
         try:
             config = self._get_config()
         except ValueError:
@@ -178,14 +214,20 @@ class BrowserUseProvider(CloudBrowserProvider):
             return False
 
         try:
-            response = requests.patch(
-                f"{config['base_url']}/browsers/{session_id}",
+            # Use the stop endpoint with strategy=session to destroy the sandbox
+            # This is different from just stopping the task (which keeps the session alive)
+            response = requests.post(
+                f"{config['base_url']}/sessions/{session_id}/stop",
                 headers=self._headers(config),
-                json={"action": "stop"},
-                timeout=10,
+                json={"strategy": "session"},  # Destroy sandbox entirely
+                timeout=15,
             )
+
             if response.status_code in (200, 201, 204):
                 logger.debug("Successfully closed Browser Use session %s", session_id)
+                # Unregister the session if we have the task_id
+                if task_id:
+                    _unregister_session(task_id)
                 return True
             else:
                 logger.warning(
@@ -200,16 +242,65 @@ class BrowserUseProvider(CloudBrowserProvider):
             return False
 
     def emergency_cleanup(self, session_id: str) -> None:
+        """Emergency cleanup for a specific session.
+        
+        Tries to stop the session with minimal error handling for use in
+        atexit handlers and exception contexts.
+        """
         config = self._get_config_or_none()
         if config is None:
             logger.warning("Cannot emergency-cleanup Browser Use session %s — missing credentials", session_id)
             return
         try:
-            requests.patch(
-                f"{config['base_url']}/browsers/{session_id}",
+            requests.post(
+                f"{config['base_url']}/sessions/{session_id}/stop",
                 headers=self._headers(config),
-                json={"action": "stop"},
+                json={"strategy": "session"},
                 timeout=5,
             )
         except Exception as e:
             logger.debug("Emergency cleanup failed for Browser Use session %s: %s", session_id, e)
+
+    def cleanup_all_sessions(self) -> int:
+        """Clean up all tracked browser sessions.
+        
+        This method should be called when Hermes shuts down to prevent
+        orphaned sessions from consuming the free tier's 3-session limit.
+        
+        Returns:
+            Number of sessions successfully cleaned up
+        """
+        sessions = _get_active_sessions()
+        if not sessions:
+            logger.debug("No active browser sessions to clean up")
+            return 0
+
+        logger.info("Cleaning up %d active browser session(s)", len(sessions))
+        
+        cleaned = 0
+        for session_id in sessions:
+            try:
+                config = self._get_config()
+                response = requests.post(
+                    f"{config['base_url']}/sessions/{session_id}/stop",
+                    headers=self._headers(config),
+                    json={"strategy": "session"},
+                    timeout=5,
+                )
+                if response.status_code in (200, 201, 204):
+                    logger.debug("Cleaned up session %s", session_id)
+                    cleaned += 1
+                else:
+                    logger.warning(
+                        "Failed to clean up session %s: HTTP %s",
+                        session_id, response.status_code
+                    )
+            except Exception as e:
+                logger.warning("Exception cleaning up session %s: %s", session_id, e)
+
+        # Clear the tracking dict after cleanup attempt
+        with _active_sessions_lock:
+            _active_browser_sessions.clear()
+
+        logger.info("Cleaned up %d/%d browser session(s)", cleaned, len(sessions))
+        return cleaned
