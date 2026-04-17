@@ -3241,6 +3241,20 @@ class GatewayRunner:
                                 f"Enable it with: `hermes skills config`"
                             )
                     user_instruction = event.get_command_args().strip()
+                    reply_text = getattr(event, "reply_to_text", None)
+                    reply_id = getattr(event, "reply_to_message_id", None)
+                    if reply_text and reply_id:
+                        cap = 4000
+                        snippet = reply_text[:cap]
+                        if len(reply_text) > cap:
+                            snippet += "…[truncated]"
+                        user_instruction = (
+                            f"This command is a reply to message {reply_id}. "
+                            f"The referent of phrases like 'this skill' or 'that job' is "
+                            f"the replied-to message below, NOT any earlier conversation:\n"
+                            f"---\n{snippet}\n---\n\n"
+                            f"User instruction: {user_instruction}"
+                        )
                     msg = build_skill_invocation_message(
                         cmd_key, user_instruction, task_id=_quick_key
                     )
@@ -3418,14 +3432,15 @@ class GatewayRunner:
                 message_text = f"{context_note}\n\n{message_text}"
 
         if getattr(event, "reply_to_text", None) and event.reply_to_message_id:
-            reply_snippet = event.reply_to_text[:500]
-            found_in_history = any(
-                reply_snippet[:200] in (msg.get("content") or "")
-                for msg in history
-                if msg.get("role") in ("assistant", "user", "tool")
+            full = event.reply_to_text
+            cap = 4000
+            snippet = full[:cap]
+            if len(full) > cap:
+                snippet += "…[truncated]"
+            message_text = (
+                f"[Replying to message {event.reply_to_message_id}:\n{snippet}\n---]"
+                f"\n\n{message_text}"
             )
-            if not found_in_history:
-                message_text = f'[Replying to: "{reply_snippet}"]\n\n{message_text}'
 
         if "@" in message_text:
             try:
