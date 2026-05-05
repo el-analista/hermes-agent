@@ -16,8 +16,8 @@ import type {
 } from '../gatewayTypes.js'
 import { useGitBranch } from '../hooks/useGitBranch.js'
 import { useVirtualHistory } from '../hooks/useVirtualHistory.js'
-import { appendTranscriptMessage } from '../lib/messages.js'
 import { composerPromptWidth } from '../lib/inputMetrics.js'
+import { appendTranscriptMessage } from '../lib/messages.js'
 import { DEFAULT_VOICE_RECORD_KEY, isMac, type ParsedVoiceRecordKey } from '../lib/platform.js'
 import { asRpcResult, rpcErrorMessage } from '../lib/rpc.js'
 import { terminalParityHints } from '../lib/terminalParity.js'
@@ -564,7 +564,7 @@ export function useMainApp(gw: GatewayClient) {
         },
         submission: { submitRef },
         system: { bellOnComplete, stdout, sys },
-        transcript: { appendMessage, panel, setHistoryItems },
+        transcript: { appendMessage, panel, scrollRef, setHistoryItems },
         voice: {
           setProcessing: setVoiceProcessing,
           setRecording: setVoiceRecording,

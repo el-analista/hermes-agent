@@ -57,13 +57,37 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   const { rpc } = ctx.gateway
   const { STARTUP_RESUME_ID, newSession, resumeById, setCatalog } = ctx.session
   const { bellOnComplete, stdout, sys } = ctx.system
-  const { appendMessage, panel, setHistoryItems } = ctx.transcript
+  const { appendMessage, panel, scrollRef, setHistoryItems } = ctx.transcript
   const { setInput } = ctx.composer
   const { submitRef } = ctx.submission
   const { setProcessing: setVoiceProcessing, setRecording: setVoiceRecording, setVoiceEnabled } = ctx.voice
 
   let pendingThinkingStatus = ''
   let thinkingStatusTimer: null | ReturnType<typeof setTimeout> = null
+
+  const transcriptAtBottom = () => {
+    const scroll = scrollRef?.current
+
+    if (!scroll) {
+      return false
+    }
+
+    const bottom = scroll.getScrollTop() + scroll.getPendingDelta() + scroll.getViewportHeight()
+
+    return scroll.isSticky() || bottom >= scroll.getScrollHeight() - 2
+  }
+
+  const snapStickyTranscriptToBottom = () => {
+    if (!transcriptAtBottom()) {
+      return
+    }
+
+    setTimeout(() => {
+      if (transcriptAtBottom()) {
+        scrollRef?.current?.scrollToBottom()
+      }
+    }, 0)
+  }
 
   // Inject the disk-save callback into turnController so recordMessageComplete
   // can fire-and-forget a persist without having to plumb a gateway ref around.
@@ -629,6 +653,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         if (!wasInterrupted) {
           const msgs: Msg[] = finalMessages.length ? finalMessages : [{ role: 'assistant', text: finalText }]
           msgs.forEach(appendMessage)
+          snapStickyTranscriptToBottom()
 
           if (bellOnComplete && stdout?.isTTY) {
             stdout.write('\x07')
