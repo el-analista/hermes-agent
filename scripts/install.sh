@@ -79,6 +79,7 @@ STAGE_NAME=""
 JSON_OUTPUT=false
 NON_INTERACTIVE=false
 INCLUDE_DESKTOP=false
+DESKTOP_ONLY=false
 
 # Detect non-interactive mode (e.g. curl | bash)
 # When stdin is not a terminal, read -p will fail with EOF,
@@ -132,6 +133,12 @@ while [[ $# -gt 0 ]]; do
             INCLUDE_DESKTOP=true
             shift
             ;;
+        --desktop-only|-DesktopOnly)
+            DESKTOP_ONLY=true
+            INCLUDE_DESKTOP=true
+            RUN_SETUP=false
+            shift
+            ;;
         --dir)
             INSTALL_DIR="$2"
             INSTALL_DIR_EXPLICIT=true
@@ -165,6 +172,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --json         Print a JSON result frame for --stage"
             echo "  --non-interactive  Skip stages that require user input"
             echo "  --include-desktop  Also build the desktop app (apps/desktop -> Hermes.app)"
+            echo "  --desktop-only  Build only the desktop app and skip local agent setup"
             echo "  --dir PATH     Installation directory"
             echo "                   default (non-root):  ~/.hermes/hermes-agent"
             echo "                   default (root, Linux): /usr/local/lib/hermes-agent"
@@ -2018,6 +2026,11 @@ run_setup_wizard() {
 }
 
 maybe_start_gateway() {
+    if [ "$DESKTOP_ONLY" = true ]; then
+        log_info "Skipping gateway setup (--desktop-only)"
+        return 0
+    fi
+
     # Check if any messaging platform tokens were configured
     ENV_FILE="$HERMES_HOME/.env"
     if [ ! -f "$ENV_FILE" ]; then
@@ -2389,6 +2402,16 @@ install_desktop() {
         return 1
     fi
     log_success "Desktop app built: $app"
+
+    if [ "$OS" = "macos" ]; then
+        local user_apps="$HOME/Applications"
+        mkdir -p "$user_apps"
+        ln -sfn "$app" "$user_apps/Hermes.app"
+        log_success "Desktop app shortcut created: $user_apps/Hermes.app"
+        log_info "Launch with: open \"$user_apps/Hermes.app\""
+    else
+        log_info "Launch with: hermes desktop --skip-build"
+    fi
 
     # `npm install` + `npm run pack` rewrite lockfiles; restore them so the
     # checkout stays clean for the next `hermes update`.
